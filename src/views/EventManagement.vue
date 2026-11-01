@@ -1,20 +1,30 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useEvents } from '@/composables/useEvents'
-import AppModal from '@/components/ui/AppModal.vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import OrganizerEventCard from '@/components/event/OrganizerEventCard.vue'
 import EventCreateForm from '@/components/event/EventCreateForm.vue'
 
 const router = useRouter()
-const { activeEvents, completedEvents, createEvent, completeEvent, deleteEvent } = useEvents()
+const { activeEvents, completedEvents, createEvent, completeEvent, deleteEvent, fetchEvents } =
+  useEvents()
 
 const currentTab = ref('active') // 'active' | 'create' | 'completed'
 
+// MODAL STATE
 const isModalOpen = ref(false)
-const modalAction = ref('complete') // 'complete' | 'delete'
+const modalAction = ref('complete')
 const selectedEvent = ref(null)
+const isProcessingAction = ref(false)
+
+const createFormRef = ref(null)
+const isSubmitting = ref(false)
+
+onMounted(() => {
+  fetchEvents()
+})
 
 const handleOpenCompleteModal = (event) => {
   selectedEvent.value = event
@@ -28,15 +38,20 @@ const handleOpenDeleteModal = (event) => {
   isModalOpen.value = true
 }
 
-const handleConfirmModal = () => {
+const handleConfirmModal = async () => {
   if (selectedEvent.value) {
-    if (modalAction.value === 'complete') {
-      completeEvent(selectedEvent.value.id)
-    } else if (modalAction.value === 'delete') {
-      deleteEvent(selectedEvent.value.id)
+    isProcessingAction.value = true
+    try {
+      if (modalAction.value === 'complete') {
+        await completeEvent(selectedEvent.value.id)
+      } else if (modalAction.value === 'delete') {
+        await deleteEvent(selectedEvent.value.id)
+      }
+    } finally {
+      isProcessingAction.value = false
+      isModalOpen.value = false
+      selectedEvent.value = null
     }
-    isModalOpen.value = false
-    selectedEvent.value = null
   }
 }
 
@@ -45,11 +60,19 @@ const handleCancelModal = () => {
   selectedEvent.value = null
 }
 
-const handleCreateEvent = (eventData) => {
-  createEvent(eventData)
-  setTimeout(() => {
+const handleCreateEvent = async (eventData) => {
+  isSubmitting.value = true
+  try {
+    await createEvent(eventData)
+    if (createFormRef.value) {
+      createFormRef.value.resetForm()
+    }
     currentTab.value = 'active'
-  }, 1000)
+  } catch (err) {
+    alert(err.message || 'Gagal menyimpan acara ke server REST API')
+  } finally {
+    isSubmitting.value = false
+  }
 }
 </script>
 
@@ -99,7 +122,6 @@ const handleCreateEvent = (eventData) => {
           @delete="handleOpenDeleteModal"
         />
       </div>
-      <!-- EMPTY STATE ACTIVE -->
       <div v-else class="empty-state">
         <div class="empty-icon"></div>
         <h3>No Active Events</h3>
@@ -110,7 +132,12 @@ const handleCreateEvent = (eventData) => {
 
     <!-- TAB 2: CREATE EVENT FORM -->
     <section v-if="currentTab === 'create'" class="tab-pane">
-      <EventCreateForm @submit="handleCreateEvent" @cancel="currentTab = 'active'" />
+      <EventCreateForm
+        ref="createFormRef"
+        :submitting="isSubmitting"
+        @submit="handleCreateEvent"
+        @cancel="currentTab = 'active'"
+      />
     </section>
 
     <!-- TAB 3: COMPLETED EVENTS (ARCHIVE) -->
@@ -124,7 +151,6 @@ const handleCreateEvent = (eventData) => {
           @delete="handleOpenDeleteModal"
         />
       </div>
-      <!-- EMPTY STATE COMPLETED -->
       <div v-else class="empty-state">
         <div class="empty-icon"></div>
         <h3>No Completed Events</h3>
@@ -132,7 +158,7 @@ const handleCreateEvent = (eventData) => {
       </div>
     </section>
 
-    <!-- MODAL KONFIRMASI (Reused for Complete & Delete) -->
+    <!-- MODAL KONFIRMASI -->
     <AppModal
       :is-open="isModalOpen"
       :title="modalAction === 'complete' ? 'Complete Event?' : 'Delete Event Permanently?'"
