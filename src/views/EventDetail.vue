@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useEvents } from '@/composables/useEvents'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -7,11 +7,17 @@ import AppCard from '@/components/ui/AppCard.vue'
 
 const route = useRoute()
 const router = useRouter()
-const { getEventById, isUserRegistered } = useEvents()
+const { getEventById, isUserRegistered, fetchEventById, loading, error } = useEvents()
 
 const event = computed(() => getEventById(route.params.id))
 const isRegistered = computed(() => {
   return event.value ? isUserRegistered(event.value.id) : false
+})
+
+onMounted(async () => {
+  if (!event.value) {
+    await fetchEventById(route.params.id)
+  }
 })
 </script>
 
@@ -19,7 +25,19 @@ const isRegistered = computed(() => {
   <div class="event-detail-page">
     <button @click="router.push('/browse/events')" class="btn-back">&larr; Back to Events</button>
 
-    <div v-if="event">
+    <!-- LOADING DETAIL ACARA DARI SERVER -->
+    <div
+      v-if="loading"
+      class="detail-header skeleton-shimmer"
+      style="min-height: 180px; display: flex; align-items: center; justify-content: center"
+    >
+      <p style="color: var(--text-muted); font-size: 1.1rem; font-weight: 500">
+        Memuat rincian acara dari server...
+      </p>
+    </div>
+
+    <!-- KONDISI 2: DATA EVENT DITEMUKAN -->
+    <div v-else-if="event">
       <div class="detail-header">
         <div class="header-tags">
           <span class="event-tag">{{ event.cat }}</span>
@@ -38,12 +56,14 @@ const isRegistered = computed(() => {
         </div>
       </div>
 
+      <!-- ASYMMETRICAL LAYOUT -->
       <div class="detail-content grid-asymmetric">
         <div class="main-desc">
           <h2>About This Event</h2>
           <p class="description-text">{{ event.desc }}</p>
         </div>
 
+        <!-- FOCAL POINT & STICKY PANE -->
         <div class="sidebar">
           <AppCard class="ticket-card sticky-pane">
             <h3>Event Registration</h3>
@@ -66,33 +86,30 @@ const isRegistered = computed(() => {
                 variant="secondary"
                 class="btn-register btn-disabled"
                 disabled
+                >Registration Closed</AppButton
               >
-                Registration Closed
-              </AppButton>
               <div v-else-if="isRegistered" class="registered-action-group">
-                <AppButton variant="secondary" class="btn-register btn-registered" disabled>
-                  Already Registered
-                </AppButton>
-                <router-link :to="'/browse/your-events/' + event.id" class="view-receipt-link">
-                  View Your Ticket Receipt &rarr;
-                </router-link>
+                <AppButton variant="secondary" class="btn-register btn-registered" disabled
+                  >Already Registered</AppButton
+                >
+                <router-link :to="`/browse/your-events/${event.id}`" class="view-receipt-link"
+                  >View Your Ticket Receipt &rarr;</router-link
+                >
               </div>
               <AppButton
                 v-else-if="event.quota <= 0"
                 variant="secondary"
                 class="btn-register btn-disabled"
                 disabled
+                >Sold Out</AppButton
               >
-                Sold Out
-              </AppButton>
               <AppButton
                 v-else
                 variant="primary"
                 class="btn-register"
                 @click="router.push(`/browse/events/${event.id}/register`)"
+                >Register Now</AppButton
               >
-                Register Now
-              </AppButton>
             </div>
 
             <p v-if="!event.done && !isRegistered && event.quota > 0" class="spots">
@@ -103,12 +120,18 @@ const isRegistered = computed(() => {
       </div>
     </div>
 
+    <!-- KONDISI 3: EMPTY / ERROR STATE IF ID NOT FOUND -->
     <div v-else class="not-found-card">
       <h2>404 Event Not Found</h2>
-      <p>The event you are looking for is unavailable or has been removed by the organizer.</p>
-      <AppButton variant="primary" @click="router.push('/browse/events')">
-        Back to Event Catalog
-      </AppButton>
+      <p>
+        {{
+          error ||
+          'The event you are looking for is unavailable or has been removed by the organizer.'
+        }}
+      </p>
+      <AppButton variant="primary" @click="router.push('/browse/events')"
+        >Back to Event Catalog</AppButton
+      >
     </div>
   </div>
 </template>
@@ -165,7 +188,7 @@ const isRegistered = computed(() => {
 }
 .status-soldout {
   background: #fee2e2;
-  color: #b91c1c;
+  color: #691c1c;
 }
 .status-ended {
   background: rgba(108, 117, 125, 0.15);
